@@ -1,8 +1,10 @@
-name: Create Terraform Workspace
+name: Create Terraform Workspace for New Folders
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - 'terraform/**'  # Specifically watch for changes in the terraform directory
 
 jobs:
   detect-and-create-workspace:
@@ -32,9 +34,12 @@ jobs:
           # Get list of all added files in the PR
           ADDED_FILES=$(git diff --name-only --diff-filter=A $BASE_SHA $HEAD_SHA || echo "")
           
-          # Extract folder paths and look for new folders
-          # We'll focus on folders within the specified path - adjust as needed
-          TARGET_PATH="Terraform"
+          # Debug: Show what files were added
+          echo "Added files:"
+          echo "$ADDED_FILES"
+          
+          # Extract folder paths and look for new folders directly under terraform/
+          TARGET_PATH="terraform"
           
           # Find new directories by looking at added files
           NEW_FOLDERS=""
@@ -44,9 +49,13 @@ jobs:
               # Extract the first-level folder name after the target path
               FOLDER_NAME=$(echo $file | cut -d'/' -f2)
               
+              # Debug: Show extracted folder name
+              echo "Extracted folder: $FOLDER_NAME from file: $file"
+              
               # Check if this is a new folder (not seen before in the base)
               if ! git ls-tree -d $BASE_SHA $TARGET_PATH/$FOLDER_NAME > /dev/null 2>&1; then
                 NEW_FOLDERS="$NEW_FOLDERS $FOLDER_NAME"
+                echo "Detected new folder: $FOLDER_NAME"
               fi
             fi
           done
@@ -61,7 +70,7 @@ jobs:
         if: steps.new-folders.outputs.new_folders != ''
         run: |
           # Initialize Terraform
-          cd terraform  # Adjust this to your Terraform root directory
+          cd terraform  # This should be the directory containing your Terraform configuration
           terraform init
           
           # Create workspace for each new folder

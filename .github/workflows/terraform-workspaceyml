@@ -1,0 +1,88 @@
+name: Create Terraform Workspace
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  detect-and-create-workspace:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for folder change detection
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: '1.4.6'  # Specify your Terraform version
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}  # For Terraform Cloud
+      
+      - name: Detect new folders
+        id: new-folders
+        run: |
+          # Get the base and head commits of the PR
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          
+          echo "Comparing changes between $BASE_SHA and $HEAD_SHA"
+          
+          # Get list of all added files in the PR
+          ADDED_FILES=$(git diff --name-only --diff-filter=A $BASE_SHA $HEAD_SHA || echo "")
+          
+          # Extract folder paths and look for new folders
+          # We'll focus on folders within the specified path - adjust as needed
+          TARGET_PATH="environments"  # Change this to your folder structure
+          
+          # Find new directories by looking at added files
+          NEW_FOLDERS=""
+          for file in $ADDED_FILES; do
+            # Check if the file is in our target path
+            if [[ $file == $TARGET_PATH/* ]]; then
+              # Extract the first-level folder name after the target path
+              FOLDER_NAME=$(echo $file | cut -d'/' -f2)
+              
+              # Check if this is a new folder (not seen before in the base)
+              if ! git ls-tree -d $BASE_SHA $TARGET_PATH/$FOLDER_NAME > /dev/null 2>&1; then
+                NEW_FOLDERS="$NEW_FOLDERS $FOLDER_NAME"
+              fi
+            fi
+          done
+          
+          # Remove duplicates and leading/trailing spaces
+          UNIQUE_FOLDERS=$(echo $NEW_FOLDERS | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | xargs)
+          
+          echo "Found new folders: $UNIQUE_FOLDERS"
+          echo "new_folders=$UNIQUE_FOLDERS" >> $GITHUB_OUTPUT
+      
+      - name: Create Terraform workspaces
+        if: steps.new-folders.outputs.new_folders != ''
+        run: |
+          # Initialize Terraform
+          cd terraform  # Adjust this to your Terraform root directory
+          terraform init
+          
+          # Create workspace for each new folder
+          for folder in ${{ steps.new-folders.outputs.new_folders }}; do
+            echo "Creating workspace for: $folder"
+            terraform workspace new $folder || echo "Workspace $folder already exists"
+          done
+      
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        if: steps.new-folders.outputs.new_folders != ''
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const folders = '${{ steps.new-folders.outputs.new_folders }}'.trim().split(' ');
+            if (folders.length > 0 && folders[0] !== '') {
+              const folderList = folders.map(folder => `- \`${folder}\``).join('\n');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🚀 New Terraform Workspaces Created\n\nThe following workspaces have been created based on new folders:\n\n${folderList}\n\nThese workspaces are ready for use with \`terraform workspace select <name>\`.`
+              });
+            }

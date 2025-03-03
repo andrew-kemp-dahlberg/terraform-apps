@@ -16,7 +16,7 @@ module app {
             } 
             deprovisioning = { #this is how users are deprovisioned from the app
                 type = "Okta Workflows Fully Automated"
-                link = "https://automation.com" 
+                link = "https://company.workflows.okta.com/app/folders/folderId/flows" 
             } 
         } 
         service_accounts = ["service.account@company.com", "service.account2@company.com"] #This is a list of service accounts

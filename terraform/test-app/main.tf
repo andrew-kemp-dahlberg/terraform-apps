@@ -35,6 +35,7 @@ module app {
     #Everything below this is optional for increased customization. 
     #If you want a simple custom SAML app with a default configuration
     #You can delete this comment and everything below it
+    #This is purely for testing
     #
 }
 

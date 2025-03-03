@@ -34,7 +34,7 @@ jobs:
           
           # Extract folder paths and look for new folders
           # We'll focus on folders within the specified path - adjust as needed
-          TARGET_PATH="environments"  # Change this to your folder structure
+          TARGET_PATH="Terraform"
           
           # Find new directories by looking at added files
           NEW_FOLDERS=""

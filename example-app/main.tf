@@ -1,7 +1,7 @@
 module app {
-    source = "https://github.com/andrew-kemp-dahlberg/terraform-okta-app" #This is the module this always stays the same.
+    source = "https://github.com/andrew-kemp-dahlberg/terraform-okta-app" #This is the link to the module. This always stays the same.
     label = "Example" #This is the name of the app displayed to users
-    admin_note = {
+    admin_note = {#These notes are shortened and added to admin notes. They also are uploaded to confluence.
         saas_mgmt_name = "example" #This is the name of the app in Torii
         accounting_name = "Example" #This is the name of the app in Netsuite
         sso_enforced = false #On initial provision this should be set to false. When you are sure you have enforced SSO change to true.
@@ -26,10 +26,15 @@ module app {
         These are additional notes that you can add. 
         You can add multiple lines etc. 
         A portion of these notes are uploaded directly to the app. 
-        All of the fields you add here are added to confluence. 
+        All of the fields you add here will be added to confluence. 
         EOT
     }
     sso_url = "https://example.com"#this is the sso url 
     audience_uri = "https://example.com" #This is audience_uri/entity id
+    #
+    #Everything below this is optional for increased customization. 
+    #If you want a simple custom SAML app with a default configuration
+    #You can delete this comment and everything below it
+    #
 }
 

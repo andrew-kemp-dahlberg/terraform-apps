@@ -1,97 +1,118 @@
-name: Create Terraform Workspace for New Folders
+name: Create HCP Terraform Workspace on PR
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'terraform/**'  # Specifically watch for changes in the terraform directory
+      - 'terraform/**'  # Only trigger when changes are made in the terraform directory
 
 jobs:
-  detect-and-create-workspace:
+  detect-new-modules:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetch all history for folder change detection
+          fetch-depth: 0  # Fetch all history to detect new directories
+      
+      - name: Fetch base branch for comparison
+        run: |
+          git fetch origin ${{ github.base_ref }}
+      
+      - name: Detect new directories
+        id: detect_dirs
+        run: |
+          # Get the list of changed files in the PR
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}..HEAD | grep '^terraform/')
+          
+          # Extract unique new directories under terraform/
+          NEW_DIRS=$(echo "$CHANGED_FILES" | grep -o "terraform/[^/]*" | sort | uniq)
+          
+          # Check if these directories are actually new (not in the base branch)
+          ACTUAL_NEW_DIRS=""
+          for dir in $NEW_DIRS; do
+            if [ ! -d "$dir" ]; then
+              continue
+            fi
+            
+            # Check if directory existed in base branch
+            if ! git ls-tree -d origin/${{ github.base_ref }} "$dir" &> /dev/null; then
+              ACTUAL_NEW_DIRS="$ACTUAL_NEW_DIRS $dir"
+              echo "Found new directory: $dir"
+            fi
+          done
+          
+          # Format as JSON array for output
+          DIRS_JSON=$(echo "$ACTUAL_NEW_DIRS" | tr ' ' '\n' | sed '/^$/d' | jq -R . | jq -s .)
+          echo "new_dirs=$DIRS_JSON" >> $GITHUB_OUTPUT
+          echo "Found new directories: $DIRS_JSON"
       
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: '1.4.6'  # Specify your Terraform version
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}  # For Terraform Cloud
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
       
-      - name: Detect new folders
-        id: new-folders
+      - name: Create HCP Terraform Workspaces
+        if: ${{ steps.detect_dirs.outputs.new_dirs != '[]' && steps.detect_dirs.outputs.new_dirs != '' }}
+        env:
+          TFE_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          TFE_ORG: ${{ secrets.TF_ORGANIZATION }}
+          TFE_ADDR: "https://app.terraform.io"  # Change to your HCP TFE address if different
         run: |
-          # Get the base and head commits of the PR
-          BASE_SHA=${{ github.event.pull_request.base.sha }}
-          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          # Parse the JSON array of new directories
+          NEW_DIRS=$(echo '${{ steps.detect_dirs.outputs.new_dirs }}' | jq -r '.[]')
           
-          echo "Comparing changes between $BASE_SHA and $HEAD_SHA"
-          
-          # Get list of all added files in the PR
-          ADDED_FILES=$(git diff --name-only --diff-filter=A $BASE_SHA $HEAD_SHA || echo "")
-          
-          # Debug: Show what files were added
-          echo "Added files:"
-          echo "$ADDED_FILES"
-          
-          # Extract folder paths and look for new folders directly under terraform/
-          TARGET_PATH="terraform"
-          
-          # Find new directories by looking at added files
-          NEW_FOLDERS=""
-          for file in $ADDED_FILES; do
-            # Check if the file is in our target path
-            if [[ $file == $TARGET_PATH/* ]]; then
-              # Extract the first-level folder name after the target path
-              FOLDER_NAME=$(echo $file | cut -d'/' -f2)
-              
-              # Debug: Show extracted folder name
-              echo "Extracted folder: $FOLDER_NAME from file: $file"
-              
-              # Check if this is a new folder (not seen before in the base)
-              if ! git ls-tree -d $BASE_SHA $TARGET_PATH/$FOLDER_NAME > /dev/null 2>&1; then
-                NEW_FOLDERS="$NEW_FOLDERS $FOLDER_NAME"
-                echo "Detected new folder: $FOLDER_NAME"
-              fi
-            fi
-          done
-          
-          # Remove duplicates and leading/trailing spaces
-          UNIQUE_FOLDERS=$(echo $NEW_FOLDERS | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | xargs)
-          
-          echo "Found new folders: $UNIQUE_FOLDERS"
-          echo "new_folders=$UNIQUE_FOLDERS" >> $GITHUB_OUTPUT
-      
-      - name: Create Terraform workspaces
-        if: steps.new-folders.outputs.new_folders != ''
-        run: |
-          # Initialize Terraform
-          cd terraform  # This should be the directory containing your Terraform configuration
-          terraform init
-          
-          # Create workspace for each new folder
-          for folder in ${{ steps.new-folders.outputs.new_folders }}; do
-            echo "Creating workspace for: $folder"
-            terraform workspace new $folder || echo "Workspace $folder already exists"
+          for dir in $NEW_DIRS; do
+            # Extract module name from path
+            MODULE_NAME=$(basename "$dir")
+            echo "Creating workspace for module: $MODULE_NAME"
+            
+            # Create workspace using TFE API
+            curl \
+              --header "Authorization: Bearer $TFE_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              --request POST \
+              --data @- \
+              "${TFE_ADDR}/api/v2/organizations/${TFE_ORG}/workspaces" << EOF
+            {
+              "data": {
+                "type": "workspaces",
+                "attributes": {
+                  "name": "${MODULE_NAME}",
+                  "auto-apply": false,
+                  "terraform-version": "1.5.5",
+                  "working-directory": "terraform/${MODULE_NAME}"
+                }
+              }
+            }
+            EOF
+            
+            echo "Workspace '${MODULE_NAME}' created successfully"
           done
       
       - name: Comment on PR
+        if: ${{ steps.detect_dirs.outputs.new_dirs != '[]' && steps.detect_dirs.outputs.new_dirs != '' }}
         uses: actions/github-script@v6
-        if: steps.new-folders.outputs.new_folders != ''
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const folders = '${{ steps.new-folders.outputs.new_folders }}'.trim().split(' ');
-            if (folders.length > 0 && folders[0] !== '') {
-              const folderList = folders.map(folder => `- \`${folder}\``).join('\n');
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## 🚀 New Terraform Workspaces Created\n\nThe following workspaces have been created based on new folders:\n\n${folderList}\n\nThese workspaces are ready for use with \`terraform workspace select <name>\`.`
-              });
-            }
+            const newDirs = JSON.parse('${{ steps.detect_dirs.outputs.new_dirs }}');
+            
+            let comment = '## Terraform Workspaces Created\n\n';
+            comment += 'The following new modules were detected and workspaces were created:\n\n';
+            
+            newDirs.forEach(dir => {
+              const moduleName = dir.split('/').pop();
+              comment += `- \`${moduleName}\`\n`;
+            });
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

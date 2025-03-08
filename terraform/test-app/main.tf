@@ -70,3 +70,22 @@ terraform {
     } 
   } 
 }
+
+variable "environment" {
+  description = "Information to authenticate with Okta Provider"
+  type = object({
+    org_name       = string
+    base_url       = string
+    client_id      = string
+    private_key_id = string
+    private_key    = string
+    device_assurance_policy_ids = object({
+      Mac     = optional(string)
+      Windows = optional(string)
+      iOS     = optional(string)
+      Android = optional(string)
+    })
+  })
+  sensitive = true
+
+}

@@ -30,7 +30,7 @@ module app {
             EOT
     }
     saml_app = {
-logo = "https://github.com/andrew-kemp-dahlberg/terraform-apps/blob/main/terraform/test-app/figma.png"    
+logo = "./logo.png"    
 sso_url  = "https://example.com"   #this is the sso url 
     audience = "https://example.com"   #This is audience_uri/entity id
 

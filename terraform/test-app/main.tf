@@ -30,6 +30,7 @@ module app {
             EOT
     }
     saml_app = {
+preconfigured_app = "figma"
 logo = "./logo.png"    
 sso_url  = "https://example.com"   #this is the sso url 
     audience = "https://example.com"   #This is audience_uri/entity id

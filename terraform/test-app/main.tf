@@ -37,19 +37,19 @@ sso_url  = "https://example.com"   #this is the sso url
     user_attribute_statements = [
         {
         name        = "givenName"
-        name_format = "uri"
+        name_format = "basic"
         values      = ["user.firstName"]
         },
 
         {
         name        = "familyName"
-        name_format = "uri"
+        name_format = "basic"
         values      = ["user.lastName"]
         },
 
         {
         name        = "displayName"
-        name_format = "uri"
+        name_format = "basic"
         values      = ["user.displayName"]
         },
 
